@@ -36,6 +36,7 @@ Mọi mode đều trả về một `t` rồi map — nên đổi palette là đ�
 | 4 | Silk Strands | field hướng `a = fbm(p)*π*4`; streak `s = sin((x*cos a + y*sin a)*40 + fbm*6)`; làm mờ anisotropic bằng fbm scale-y khác scale-x |
 | 5 | Phong cảnh | SDF bầu trời gradient + mặt trời disc `d=length(uv-sun)` + 3 lớp núi `ridge = 1-abs(fbm)` theo từng dải y, sương mù theo chiều sâu |
 | 6 | Bauhaus Arcs | lưới vòm `d = length(fract(p*N)-0.5)` + sóng sin dịch theo fbm, posterize 5 bậc để ra mảng màu phẳng |
+| 7 | Neon Veil | dải lụa ngang `center = 0.5 + fbm*0.34 + sin(x)` + mask `band = smoothstep(1, 0.12, d)`; vân trong `layers = fbm(q + w*warp)` + sợi sáng `pow(1-abs(sin(ph)), 7)`; hạt bokeh 2 lớp hash-grid ngoài dải |
 
 ## Tăng tốc
 

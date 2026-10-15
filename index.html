@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Abstract Art Generator — WebGPU + WASM</title>
+  <title>Abstract Art Generator — 7 trường phái trừu tượng</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>◈ Abstract Art Generator</h1>
-      <p>WebGPU (WGSL) • WebAssembly noise • Canvas2D fallback — mở bằng server local, không cần build.</p>
+      <p>7 trường phái trừu tượng · WebGPU + CPU fallback — mở bằng server local, không cần build.</p>
     </div>
     <div class="engine-badges">
       <span id="badge-gpu" class="badge">WebGPU: …</span>
@@ -22,71 +22,22 @@
   <main class="layout">
     <aside class="panel">
       <section>
-        <h2>1 · Công thức</h2>
-        <label class="row">Phong cách
-          <select id="mode">
-            <option value="0">01 · Marble Flow — vân đá domain-warp</option>
-            <option value="1">02 · Nebula — tinh vân vũ trụ</option>
-            <option value="2">03 · Kaleidoscope — vạn hoa đối xứng</option>
-            <option value="3">04 · Topography — địa hình đường đồng mức</option>
-            <option value="4">05 · Silk Strands — sợi lụa Cameron</option>
-            <option value="5">06 · Phong cảnh — núi + mặt trời (landscape)</option>
-            <option value="6">07 · Bauhaus Arcs — sóng vòm tối giản</option>
-          </select>
-        </label>
+        <h2>1 · Phong cách — 7 trường phái</h2>
+        <div id="styles" class="style-grid"></div>
+      </section>
+
+      <section>
+        <h2>2 · Seed</h2>
         <label class="row">Seed <span class="val" id="seed-val"></span>
           <span class="seed-row">
             <input id="seed" type="number" value="7" step="1" />
             <button id="btn-random" title="Ngẫu nhiên">🎲</button>
           </span>
         </label>
-        <label class="row">Engine
-          <select id="engine">
-            <option value="auto">Auto (WebGPU → CPU)</option>
-            <option value="webgpu">Bắt buộc WebGPU</option>
-            <option value="cpu">CPU Canvas2D + WASM</option>
-          </select>
-        </label>
       </section>
 
       <section>
-        <h2>2 · Màu sắc</h2>
-        <label class="row">Palette mẫu
-          <select id="palette"></select>
-        </label>
-        <div id="custom-colors" class="colors"></div>
-        <p class="hint">Đổi từng màu bên dưới để custom. Mọi công thức đều map qua 5 điểm màu này.</p>
-      </section>
-
-      <section>
-        <h2>3 · Tinh chỉnh</h2>
-        <label class="row">Chi tiết (scale) <span class="val" id="v-scale"></span>
-          <input id="scale" type="range" min="1" max="9" step="0.1" value="3.2" />
-        </label>
-        <label class="row">Độ xoắn warp <span class="val" id="v-warp"></span>
-          <input id="warp" type="range" min="0" max="3" step="0.05" value="1.2" />
-        </label>
-        <label class="row">Phát sáng glow <span class="val" id="v-glow"></span>
-          <input id="glow" type="range" min="0" max="2" step="0.05" value="0.8" />
-        </label>
-        <label class="row">Hạt grain <span class="val" id="v-grain"></span>
-          <input id="grain" type="range" min="0" max="0.35" step="0.005" value="0.06" />
-        </label>
-        <label class="row">Biến thể (núi / cánh hoa) <span class="val" id="v-variant"></span>
-          <input id="variant" type="range" min="0" max="1" step="0.01" value="0.5" />
-        </label>
-        <div id="sun-opts" class="hidden">
-          <label class="row">Vị trí mặt trời X <span class="val" id="v-sunx"></span>
-            <input id="sunx" type="range" min="0" max="1" step="0.01" value="0.68" />
-          </label>
-          <label class="row">Vị trí mặt trời Y <span class="val" id="v-suny"></span>
-            <input id="suny" type="range" min="0" max="1" step="0.01" value="0.38" />
-          </label>
-        </div>
-      </section>
-
-      <section>
-        <h2>4 · Tỉ lệ & xuất ảnh</h2>
+        <h2>3 · Tỉ lệ & xuất ảnh</h2>
         <div id="ratios" class="ratio-grid"></div>
         <label class="row">Kích thước custom (px)
           <span class="wh-row">
@@ -119,13 +70,13 @@
       <div id="stage-box" class="stage-box">
         <canvas id="stage"></canvas>
       </div>
-      <p class="stage-hint">Khung xem giữ đúng tỉ lệ export. Ảnh xuất ra render lại ở độ phân giải cao, không chỉ upscale canvas xem trước.</p>
+      <div id="style-info" class="style-info"></div>
+      <p class="stage-hint">Ảnh xuất ra render lại ở độ phân giải cao, không chỉ upscale canvas xem trước.</p>
     </section>
   </main>
 
   <footer class="foot">
-    <span>Công thức: fBm + domain warping (Inigo Quilez), flow-field marble, kaleidoscopic polar mapping, topographic isolines, anisotropic streaks, gradient landscape SDF.</span>
-    <span>Chi tiết công thức xem <code>src/formulas.md</code>.</span>
+    <span>Hình học · Hành động · Trường màu · Cạnh sắc · Trữ tình · Hữu cơ · Thị giác — mỗi ảnh là một diễn giải sinh ngẫu nhiên (generative) theo tinh thần trường phái, không sao chép tác phẩm gốc.</span>
   </footer>
 
   <script type="module" src="./src/main.js"></script>

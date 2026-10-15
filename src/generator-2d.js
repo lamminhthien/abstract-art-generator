@@ -1,5 +1,4 @@
-// CPU fallback (Canvas2D + ImageData). Cùng công thức với shader nhưng rút gọn
-// octave để preview nhanh; dùng WASM hash cho grain/stars (deterministic theo seed).
+// CPU fallback (Canvas2D + ImageData) — mirror 7 công thức trừu tượng.
 import { paletteMap } from "./palettes.js";
 import { hash01 } from "./wasm-noise.js";
 
@@ -26,10 +25,10 @@ function makeNoise(seed) {
   return { h, vn, fbm };
 }
 
-// params giống WebGPU + onProgress(0..1). Trả về ms render.
+// params giống WebGPU + onProgress(0..1).
 export async function renderCPU(canvas, params, onProgress) {
   const t0 = performance.now();
-  const { w, h, seed, scale, warp, glow, grain, mode, variant, sunx, suny, colors01 } = params;
+  const { w, h, seed, scale, warp, glow, grain, mode, variant, colors01 } = params;
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Không lấy được 2d context (canvas đã bị chiếm bởi WebGPU?).");
@@ -37,8 +36,17 @@ export async function renderCPU(canvas, params, onProgress) {
   const px = img.data;
   const { fbm, h: nhash } = makeNoise(seed);
   const aspect = w / h;
-  const segs = 4 + Math.floor(variant * 10);
-  const oct = w * h > 2_000_000 ? 3 : 4; // ảnh export lớn → bớt octave cho đỡ lag
+  const ss = (e0, e1, x) => { const k = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return k * k * (3 - 2 * k); };
+  const oct = w * h > 2_000_000 ? 3 : 4;
+  const bokeh = (sx, sy, thresh, rad) => {
+    const cx = Math.floor(sx), cy = Math.floor(sy);
+    if (nhash(cx, cy) < thresh) return 0;
+    const ox = nhash(cx + 7, cy + 3) * 0.6 + 0.2, oy = nhash(cx + 1, cy + 9) * 0.6 + 0.2;
+    const dd = Math.hypot(sx - cx - ox, sy - cy - oy);
+    const r = rad * (0.4 + 0.6 * nhash(cx + 9, cy + 1));
+    const m = Math.min(1, Math.max(0, (r - dd) / (r * 0.75)));
+    return m * m * (0.35 + 0.65 * nhash(cx + 1, cy + 7));
+  };
 
   for (let y = 0; y < h; y++) {
     const v = 1 - (y + 0.5) / h;
@@ -48,72 +56,74 @@ export async function renderCPU(canvas, params, onProgress) {
       const py = v * scale + seed * 0.37;
       let t = 0.5, light = 0;
 
-      if (mode === 0) {           // marble
-        const qx = fbm(px_, py, oct), qy = fbm(px_ + 5.2, py + 1.3, oct);
-        const rx = fbm(px_ + warp * qx + 1.7, py + warp * qy + 9.2, oct);
-        const ry = fbm(px_ + warp * qx + 8.3, py + warp * qy + 2.8, oct);
-        t = fbm(px_ + warp * rx, py + warp * ry, oct);
-        const vein = Math.pow(1 - Math.abs(Math.sin((px_ * 2 + py * 3 + (rx + ry) * 6) * Math.PI)), 8);
-        t = Math.min(1, Math.max(0, t * 0.85 + vein * 0.35 * (0.4 + glow)));
-        light = vein * glow;
-      } else if (mode === 1) {    // nebula
-        const q = fbm(px_ * 1.1, py * 1.1, oct);
-        const r = fbm(px_ * 1.3 + q * warp * 1.6 + seed, py * 1.3, oct);
-        t = Math.min(1, Math.max(0, fbm(px_ + warp * r * 1.8, py, oct) * 1.25 - 0.12));
-        const dx = u - 0.5, dy = v - 0.5;
-        const core = Math.pow(Math.max(0, 1 - Math.hypot(dx, dy) * 1.6 * 1.4), 2) * glow;
-        const cx = Math.floor(px_ * 22), cy = Math.floor(py * 22);
-        const star = nhash(cx, cy) > 0.985 ? Math.max(0, 1 - Math.hypot(px_ * 22 - cx - 0.5, py * 22 - cy - 0.5) * 2) * 0.8 : 0;
-        t = Math.min(1, t + core * 0.35); light = core + star * (0.6 + glow);
-      } else if (mode === 2) {    // kaleido
-        const cx = (u - 0.5) * 2, cy = (v - 0.5) * 2;
-        const r = Math.hypot(cx, cy);
-        let a = Math.atan2(cy, cx) / (Math.PI * 2) + 0.5;
-        a = Math.abs(((a * segs) % 1) * 2 - 1);
-        const qx = a * (2 + r * 5), qy = r * (2.5 + scale) - seed * 0.05;
-        const wr = fbm(qx * 2, qy * 2, 3);
-        t = (fbm(qx * scale * 0.7 + wr * warp * 2, qy * scale * 0.7, oct) * 1.6 + r * 0.7) % 1;
-        if (t < 0) t += 1;
-        light = Math.pow(1 - Math.abs(Math.sin(r * 18 - seed)), 6) * 0.5 * glow;
-      } else if (mode === 3) {    // topo
-        const hh = fbm(px_ * 1.4, py * 1.4, oct);
-        const iso = Math.abs(((hh * 10) % 1 + 1) % 1 - 0.5) * 2;
-        const line = 1 - Math.min(1, Math.max(0, iso / 0.12));
-        t = Math.min(1, Math.max(0, hh * 1.1));
-        light = line * 0.55 + (hh > 0.55 ? Math.min(1, (hh - 0.55) / 0.35) * glow : 0);
-      } else if (mode === 4) {    // silk
-        const a = fbm(px_, py * 2.2, oct) * Math.PI * 4;
-        const s = Math.sin((px_ * 22 * Math.cos(a) + py * 22 * Math.sin(a)) + fbm(px_ * 3, py * 3, 3) * 9);
-        const streak = 1 - Math.abs(s);
-        t = Math.min(1, Math.max(0, fbm(px_ * 1.6 + warp * 0.7, py * 1.6, oct) * 0.7 + Math.pow(streak, 3) * 0.45));
-        light = Math.pow(streak, 8) * glow;
-      } else if (mode === 5) {    // landscape
-        t = Math.min(1, v * 0.75 + fbm(px_ * 2, py * 2, oct) * 0.12);
-        const sdx = (u - sunx) * aspect, sdy = (v - suny);
-        const sd = Math.hypot(sdx, sdy);
-        const sunM = sd < 0.02 ? 1 : sd < 0.16 ? 1 - (sd - 0.02) / 0.14 : 0;
-        const halo = Math.pow(Math.max(0, 1 - sd * 1.8), 2) * glow;
-        t = t * (1 - sunM * 0.85) + 0.92 * sunM * 0.85 + halo * 0.25 * (1 - sunM);
-        for (let i = 0; i < 3; i++) {
-          const base = 0.62 - i * 0.14 - variant * 0.12;
-          const ridge = 1 - Math.abs(fbm(px_ * (2 + i) * 2, seed + i * 7, 3) * 2 - 1) * 2;
-          const m = base - ridge * (0.10 + i * 0.05 + variant * 0.08);
-          if (v < m) { t = Math.min(1, Math.max(0, m * 0.9 - i * 0.16)); }
+      if (mode === 0) {           // hình học
+        const cols = 4 + Math.floor(variant * 3), rows = 4 + Math.floor((1 - variant) * 3);
+        const gx = u * cols, gy = v * rows;
+        const ix = Math.floor(gx), iy = Math.floor(gy);
+        const fx = gx - ix, fy = gy - iy;
+        const hh = nhash(ix * 1.7 + seed, iy);
+        const lw = 0.055;
+        const line = (fx < lw || fx > 1 - lw || fy < lw || fy > 1 - lw) ? 1 : 0;
+        t = line ? 1.0 : hh * 0.78;
+      } else if (mode === 1) {    // hành động
+        const chaos = fbm(px_ * 2 + fbm(px_ * 3, py * 3, 3) * warp * 2, py * 2, oct);
+        const s = 1 - Math.abs(Math.sin((chaos * 14 + fbm(px_ * 5, py * 5, 3) * 8) * Math.PI));
+        const thin = Math.pow(s, 24), med = Math.pow(s, 6);
+        const splat = bokeh(px_ * 9 + seed * 0.05, py * 9, 0.93, 0.28);
+        t = Math.min(1, Math.max(0, chaos * 0.6 + med * 0.45 + thin * 0.5 + splat * 0.6));
+        light = splat * 0.3 * (0.5 + glow) + thin * 0.5 * glow;
+      } else if (mode === 2) {    // trường màu
+        const e = 0.08 + fbm(px_ * 1.5, seed, 3) * 0.05;
+        const b1 = ss(0.12 - e, 0.12 + e, v) * (1 - ss(0.48 - e, 0.48 + e, v));
+        const b2 = ss(0.55 - e, 0.55 + e, v) * (1 - ss(0.88 - e, 0.88 + e, v));
+        const tex = fbm(px_ * 3, py * 3, oct) * 0.25;
+        t = 0.15 + tex * 0.2;
+        t = t * (1 - b1 * 0.9) + (0.55 + tex) * b1 * 0.9;
+        t = t * (1 - b2 * 0.9) + (0.85 + tex * 0.5) * b2 * 0.9;
+        light = (b1 * (1 - b1) + b2 * (1 - b2)) * 2 * 0.35 * glow;
+      } else if (mode === 3) {    // cạnh sắc
+        const d1 = u * 1.2 - v * 0.6 + (fbm(seed, seed * 0.7, 3) - 0.5) * 0.6;
+        const d2 = Math.hypot(u - 0.68, v - 0.38) - (0.26 + variant * 0.15);
+        const d3 = v - (0.55 + (fbm(px_ * 2, seed, 3) - 0.5) * 0.3);
+        t = 0.1;
+        if (d1 > 0.1) t = 0.35;
+        if (d3 > 0) t = 0.6;
+        if (d2 < 0) t = 0.88;
+      } else if (mode === 4) {    // trữ tình
+        const qx = fbm(px_ * 1.2, py * 1.2, oct), qy = fbm(px_ * 1.2 + 7.3, py * 1.2 + 2.9, oct);
+        const rx = fbm(px_ * 1.5 + qx * warp * 1.5 + 2.1, py * 1.5 + 2.1, oct);
+        const wash = fbm(px_ * 1.6 + rx * 2, py * 1.6 + rx, oct);
+        const s = 1 - Math.abs(Math.sin((px_ * 3 + py * 4 + rx * 8) * Math.PI));
+        const ink = Math.pow(s, 5) * ss(0.3, 0.7, wash);
+        t = Math.min(1, Math.max(0, wash * 0.9 + ink * 0.6));
+        light = ink * 0.5 * glow;
+      } else if (mode === 5) {    // hữu cơ
+        let m = 0;
+        for (let i = 0; i < 5; i++) {
+          const cx = nhash(i * 3.1, seed) * 0.7 + 0.15, cy = nhash(seed, i * 7.7) * 0.7 + 0.15;
+          const dx = (u - cx) * aspect, dy = v - cy;
+          const rad = 0.16 + 0.10 * nhash(i, i * 2 + seed);
+          m += rad * rad / (dx * dx + dy * dy + 0.001);
         }
-        light = sunM * (0.5 + glow) + halo * 0.6;
-      } else {                    // bauhaus
-        const n = 3 + Math.floor(variant * 5);
-        const gx = ((px_ * n * 0.55) % 1 + 1) % 1, gy = ((py * n * 0.55) % 1 + 1) % 1;
-        const d = Math.hypot(gx - 0.5, gy - 0.5);
-        const wave = Math.sin((px_ + py) * 4 + fbm(px_, py, 3) * 8) * 0.5 + 0.5;
-        let raw = (d < 0.5 ? 0.6 : 0) + wave * 0.4 + fbm(px_ * 2, py * 2, 3) * 0.25;
-        t = Math.floor(Math.min(0.999, Math.max(0, raw)) * 5) / 5 + 0.1;
-        light = Math.abs(d - 0.32) < 0.06 ? glow * 0.7 : 0;
+        const body = ss(1.0, 1.6, m);
+        const edge = ss(0.7, 1.2, m) - body;
+        t = Math.min(1, Math.max(0, body * 0.75 + fbm(px_ * 2.5, py * 2.5, 3) * 0.35 + edge * 0.3));
+        light = edge * 0.6 * glow + body * 0.1;
+      } else {                    // thị giác op-art
+        const dx = (u - 0.5) * aspect, dy = v - 0.5;
+        const r = Math.hypot(dx, dy) * 2;
+        const wv = fbm(px_ * 2, py * 2, oct) * 2;
+        const rings = Math.sin((r * 24 - wv * 6 + variant * 8) * Math.PI);
+        const grid = Math.sin((u * 60 + wv * 10) * Math.PI) * Math.sin((v * 60 - wv * 8) * Math.PI);
+        const vv = rings * 0.65 + grid * 0.35;
+        t = ss(-0.25, 0.25, vv);
+        light = Math.pow(1 - Math.abs(vv), 8) * glow;
       }
 
       const [cr, cg, cb] = paletteMap(colors01, t);
-      const g = hash01(seed, x, y) - 0.5; // WASM hash
-      const vgAmt = (() => { const d = Math.hypot(u - 0.5, v - 0.5); const k = Math.min(1, Math.max(0, (1.15 - d * 1.6) / 0.8)); return 0.82 + 0.18 * k; })();
+      const g = hash01(seed, x, y) - 0.5;
+      const d = Math.hypot(u - 0.5, v - 0.5);
+      const vgAmt = 0.82 + 0.18 * Math.min(1, Math.max(0, (1.15 - d * 1.6) / 0.8));
       let R = (cr + light) + g * grain, G = (cg + light * 0.97) + g * grain, B = (cb + light * 0.92) + g * grain;
       R *= vgAmt; G *= vgAmt; B *= vgAmt;
       const o = (y * w + x) * 4;
